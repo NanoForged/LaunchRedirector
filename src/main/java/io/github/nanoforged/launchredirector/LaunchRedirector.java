@@ -103,7 +103,7 @@ public class LaunchRedirector {
      * {@link State#GAME} so the agent injected into the child stays inert.
      */
     private static MutableLaunchContext withChildLaunchProperties(MutableLaunchContext ctx) {
-        ctx.withSystemProperties(map -> {
+        ctx.modifySystemProperties(map -> {
             map.put(STATE_PROP, State.GAME.name());
 
             // -DlaunchDirect is the headless-launch switch: StarfarerSettings.isLaunchDirect() is
