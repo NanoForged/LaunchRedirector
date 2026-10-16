@@ -6,7 +6,7 @@ public record Resolution(int width, int height) {
 
     public static Resolution parse(String str) {
         if (str == null || str.isBlank()) {
-            return new Resolution(1920, 1080); // 默认值
+            return new Resolution(1920, 1080);
         }
         String[] parts = str.split("x");
         if (parts.length != 2) {

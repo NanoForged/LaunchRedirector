@@ -1,0 +1,9 @@
+# The wrapper jar is a binary and must never be line-ending normalized, otherwise the wrapper
+# fails on checkout with ClassNotFoundException: GradleWrapperMain.
+*.jar binary
+gradle/wrapper/*.jar binary
+
+# These scripts are executed by sh and must keep LF endings on every platform.
+gradlew text eol=lf
+*.sh    text eol=lf
+gradlew.bat text eol=crlf

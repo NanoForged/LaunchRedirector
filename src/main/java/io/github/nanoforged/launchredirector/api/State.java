@@ -4,6 +4,6 @@ public enum State {
     INIT,
     GAME;
 
-    public static final String STATE_PROP = "launch.redirector.stage";
+    public static final String STATE_PROP = "launch.redirector.state";
 
 }

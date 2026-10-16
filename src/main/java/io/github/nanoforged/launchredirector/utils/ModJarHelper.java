@@ -21,9 +21,12 @@ public final class ModJarHelper {
     private static final String MODS_PATH_PROP = "com.fs.starfarer.settings.paths.mods";
 
 
-    public static List<ModSpec> getModSpecs(Path workDir)  {
-        final Path modsDir = resolveModsDir(workDir);
-
+    /**
+     * Collects every enabled mod shipping an {@link ILaunchConfigPlugin} service entry.
+     *
+     * @param modsDir already resolved mods directory, see {@link #resolveModsDir(Path)}
+     */
+    public static List<ModSpec> getModSpecs(Path modsDir)  {
         final List<Path> modSubDirs = getModSubDirs(modsDir);
 
         final Set<String> enabledIds = getEnabledModIds(modsDir);
@@ -96,6 +99,10 @@ public final class ModJarHelper {
     }
 
 
+    /**
+     * mod_info.json allows '#' line comments, which org.json rejects, so they are stripped before
+     * parsing.
+     */
     private static String preprocessJson(String json) {
         return json.lines()
                 .map(line -> {
@@ -162,7 +169,12 @@ public final class ModJarHelper {
     }
 
 
-    private static Path resolveModsDir(Path workingDir) {
+    /**
+     * Resolves the mods directory from the launcher system property, falling back to
+     * {@code <workingDir>/mods}. Public because the plugin chain resolves it once and reuses the
+     * result rather than re-reading a property a plugin may have rewritten.
+     */
+    public static Path resolveModsDir(Path workingDir) {
         String prop = System.getProperty(MODS_PATH_PROP);
         if (prop != null && !prop.isBlank()) {
             return Path.of(prop);

@@ -1,21 +1,45 @@
 package io.github.nanoforged.launchredirector.api;
 
-
 import io.github.nanoforged.launchredirector.api.model.AgentSpec;
 import io.github.nanoforged.launchredirector.api.model.ModuleSpec;
 import io.github.nanoforged.launchredirector.api.model.Resolution;
+import io.github.nanoforged.launchredirector.utils.Log;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
 import java.nio.file.Path;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.function.Consumer;
 
+/**
+ * The mutable view of a {@link LaunchContext} that the plugin chain operates on: every collection
+ * getter returns an unmodifiable copy, and every setter is null guarded so a bad value is rejected
+ * at the call site instead of surfacing inside a later plugin or the command line builder.
+ *
+ * <p>The one deliberate exception is a {@code systemProperties} value: null is meaningful there, it
+ * is the bare {@code -Dkey} switch form used by {@code -DlaunchDirect}.
+ *
+ * <p>Isolation does not depend on plugins behaving: {@link LaunchContext#toMutable()} always re-wraps
+ * its input in a fresh mutable context, so a plugin that returns a live context instead of calling
+ * {@link #build()} cannot make the chain alias its internal state.
+ *
+ * <p>{@code jvmArgs} and {@code programArgs} are ordered lists because duplicate tokens are legal and
+ * their position decides which wins; the classpath is de-duplicated, hence a set.
+ */
 @Data
 @Accessors(chain = true)
 public final class MutableLaunchContext {
+
     private Path javaHome;
-    private Set<String> jvmArgs;
+    private List<String> jvmArgs;
     private Set<Path> classpath;
     private Set<AgentSpec> javaAgents;
     private Set<ModuleSpec> moduleOptions;
@@ -29,147 +53,346 @@ public final class MutableLaunchContext {
     private boolean fullScreen;
     private boolean soundEnabled;
     private boolean launchDirect;
+    private boolean jarLaunch;
 
     public MutableLaunchContext(LaunchContext ctx) {
-        this.javaHome = ctx.getJavaHome();
-        this.jvmArgs = new LinkedHashSet<>(ctx.getJvmArgs());
-        this.classpath = new LinkedHashSet<>(ctx.getClasspath());
-        this.javaAgents = new LinkedHashSet<>(ctx.getJavaAgents());
-        this.moduleOptions = new LinkedHashSet<>(ctx.getModuleOptions());
-        this.programArgs = new ArrayList<>(ctx.getProgramArgs());
-        this.mainClass = ctx.getMainClass();
-        this.workingDirectory = ctx.getWorkingDirectory();
-        this.environment = new HashMap<>(ctx.getEnvironment());
-        this.systemProperties = new HashMap<>(ctx.getSystemProperties());
-        this.gameVersion = ctx.getGameVersion();
-        this.resolution = ctx.getResolution();
-        this.fullScreen = ctx.isFullScreen();
-        this.soundEnabled = ctx.isSoundEnabled();
-        this.launchDirect = ctx.isLaunchDirect();
+        setJavaHome(ctx.getJavaHome());
+        setJvmArgs(ctx.getJvmArgs());
+        setClasspath(ctx.getClasspath());
+        setJavaAgents(ctx.getJavaAgents());
+        setModuleOptions(ctx.getModuleOptions());
+        setProgramArgs(ctx.getProgramArgs());
+        setMainClass(ctx.getMainClass());
+        setWorkingDirectory(ctx.getWorkingDirectory());
+        setEnvironment(ctx.getEnvironment());
+        setSystemProperties(ctx.getSystemProperties());
+        setGameVersion(ctx.getGameVersion());
+        setResolution(ctx.getResolution());
+        setFullScreen(ctx.isFullScreen());
+        setSoundEnabled(ctx.isSoundEnabled());
+        setLaunchDirect(ctx.isLaunchDirect());
+        setJarLaunch(ctx.isJarLaunch());
     }
 
-    public LaunchContext build() {
-        return LaunchContext.builder()
-                .javaHome(this.javaHome)
-                .jvmArgs(new LinkedHashSet<>(this.jvmArgs))
-                .classpath(new LinkedHashSet<>(this.classpath))
-                .javaAgents(new LinkedHashSet<>(this.javaAgents))
-                .moduleOptions(new LinkedHashSet<>(this.moduleOptions))
-                .programArgs(new ArrayList<>(this.programArgs))
-                .mainClass(this.mainClass)
-                .workingDirectory(this.workingDirectory)
-                .environment(new HashMap<>(this.environment))
-                .systemProperties(new HashMap<>(this.systemProperties))
-                .gameVersion(this.gameVersion)
-                .resolution(this.resolution)
-                .fullScreen(this.fullScreen)
-                .soundEnabled(this.soundEnabled)
-                .launchDirect(this.launchDirect)
-                .build();
+    // collection getters expose unmodifiable copies, so elements are shared but containers are not.
+    // That sharing is safe only while every element type stays immutable; see LaunchContext.
+
+    /** Unmodifiable snapshot of the JVM arguments, in order. */
+    public List<String> getJvmArgs() {
+        return List.copyOf(jvmArgs);
     }
 
-    public MutableLaunchContext withJvmArgs(Consumer<Set<String>> operator) {
-        operator.accept(this.jvmArgs);
+    /** Unmodifiable snapshot of the classpath. */
+    public Set<Path> getClasspath() {
+        return Set.copyOf(classpath);
+    }
+
+    public Set<AgentSpec> getJavaAgents() {
+        return Set.copyOf(javaAgents);
+    }
+
+    public Set<ModuleSpec> getModuleOptions() {
+        return Set.copyOf(moduleOptions);
+    }
+
+    /** Unmodifiable snapshot of the program arguments, in order. */
+    public List<String> getProgramArgs() {
+        return List.copyOf(programArgs);
+    }
+
+    public Map<String, String> getEnvironment() {
+        return Map.copyOf(environment);
+    }
+
+    /**
+     * Unmodifiable snapshot of the system properties.
+     *
+     * <p>Deliberately not {@link Map#copyOf}, which rejects null values: a null value is how the bare
+     * {@code -Dkey} switch form is encoded.
+     */
+    public Map<String, String> getSystemProperties() {
+        return Collections.unmodifiableMap(new LinkedHashMap<>(systemProperties));
+    }
+
+    public MutableLaunchContext setJvmArgs(Collection<String> jvmArgs) {
+        this.jvmArgs = copyList("jvmArgs", jvmArgs);
         return this;
     }
 
-    public MutableLaunchContext withClasspath(Consumer<Set<Path>> operator) {
-        operator.accept(this.classpath);
+    public MutableLaunchContext setClasspath(Collection<Path> classpath) {
+        this.classpath = copySet("classpath", classpath);
         return this;
     }
 
-    public MutableLaunchContext withJavaAgents(Consumer<Set<AgentSpec>> operator) {
-        operator.accept(this.javaAgents);
+    public MutableLaunchContext setJavaAgents(Collection<AgentSpec> javaAgents) {
+        this.javaAgents = copySet("javaAgents", javaAgents);
         return this;
     }
 
-    public MutableLaunchContext withModuleOptions(Consumer<Set<ModuleSpec>> operator) {
-        operator.accept(this.moduleOptions);
+    public MutableLaunchContext setModuleOptions(Collection<ModuleSpec> moduleOptions) {
+        this.moduleOptions = copySet("moduleOptions", moduleOptions);
         return this;
     }
 
-    public MutableLaunchContext withProgramArgs(Consumer<List<String>> operator) {
-        operator.accept(this.programArgs);
+    public MutableLaunchContext setProgramArgs(Collection<String> programArgs) {
+        this.programArgs = copyList("programArgs", programArgs);
         return this;
     }
 
-    public MutableLaunchContext withEnvironment(Consumer<Map<String, String>> operator) {
-        operator.accept(this.environment);
+    public MutableLaunchContext setEnvironment(Map<String, String> environment) {
+        this.environment = copyMap("environment", environment);
         return this;
     }
 
-    public MutableLaunchContext withSystemProperties(Consumer<Map<String, String>> operator) {
-        operator.accept(this.systemProperties);
+    public MutableLaunchContext setSystemProperties(Map<String, String> systemProperties) {
+        this.systemProperties = copySystemProperties(systemProperties);
         return this;
+    }
+
+    public MutableLaunchContext withJvmArgs(Consumer<? super List<String>> operator) {
+        Objects.requireNonNull(operator, "operator").accept(jvmArgs);
+        return setJvmArgs(jvmArgs);
+    }
+
+    public MutableLaunchContext withClasspath(Consumer<? super Set<Path>> operator) {
+        Objects.requireNonNull(operator, "operator").accept(classpath);
+        return setClasspath(classpath);
+    }
+
+    public MutableLaunchContext withJavaAgents(Consumer<? super Set<AgentSpec>> operator) {
+        Objects.requireNonNull(operator, "operator").accept(javaAgents);
+        return setJavaAgents(javaAgents);
+    }
+
+    public MutableLaunchContext withModuleOptions(Consumer<? super Set<ModuleSpec>> operator) {
+        Objects.requireNonNull(operator, "operator").accept(moduleOptions);
+        return setModuleOptions(moduleOptions);
+    }
+
+    public MutableLaunchContext withProgramArgs(Consumer<? super List<String>> operator) {
+        Objects.requireNonNull(operator, "operator").accept(programArgs);
+        return setProgramArgs(programArgs);
+    }
+
+    public MutableLaunchContext withEnvironment(Consumer<? super Map<String, String>> operator) {
+        Objects.requireNonNull(operator, "operator").accept(environment);
+        return setEnvironment(environment);
+    }
+
+    public MutableLaunchContext withSystemProperties(Consumer<? super Map<String, String>> operator) {
+        Objects.requireNonNull(operator, "operator").accept(systemProperties);
+        return setSystemProperties(systemProperties);
     }
 
     public MutableLaunchContext addEnvironment(String key, String value) {
-        this.environment.put(key, value);
+        environment.put(requireKey("environment key", key), requireNonNullString("environment value", value));
         return this;
     }
 
+    /**
+     * Adds a system property. A null value is allowed and produces the bare {@code -Dkey} form; use
+     * {@link #removeSystemProperties(String...)} to drop the property instead.
+     */
     public MutableLaunchContext addSystemProperty(String key, String value) {
-        this.systemProperties.put(key, value);
+        systemProperties.put(requireKey("system property key", key), value);
         return this;
     }
 
     public MutableLaunchContext addProgramArgs(String... value) {
-        this.programArgs.addAll(List.of(value));
+        requireElements("programArgs", value);
+        programArgs.addAll(List.of(value));
         return this;
     }
 
     public MutableLaunchContext addJvmArgs(String... value) {
-        this.jvmArgs.addAll(List.of(value));
+        requireElements("jvmArgs", value);
+        jvmArgs.addAll(List.of(value));
         return this;
     }
 
     public MutableLaunchContext addClasspath(Path... value) {
-        this.classpath.addAll(List.of(value));
+        requireElements("classpath", value);
+        classpath.addAll(List.of(value));
         return this;
     }
 
     public MutableLaunchContext addJavaAgents(AgentSpec... value) {
-        this.javaAgents.addAll(List.of(value));
+        requireElements("javaAgents", value);
+        javaAgents.addAll(List.of(value));
         return this;
     }
 
     public MutableLaunchContext addModuleOptions(ModuleSpec... value) {
-        this.moduleOptions.addAll(List.of(value));
+        requireElements("moduleOptions", value);
+        moduleOptions.addAll(List.of(value));
         return this;
     }
 
     public MutableLaunchContext removeJavaAgents(AgentSpec... value) {
-        List.of(value).forEach(this.javaAgents::remove);
+        requireElements("javaAgents", value);
+        List.of(value).forEach(javaAgents::remove);
         return this;
     }
 
     public MutableLaunchContext removeModuleOptions(ModuleSpec... value) {
-        List.of(value).forEach(this.moduleOptions::remove);
+        requireElements("moduleOptions", value);
+        List.of(value).forEach(moduleOptions::remove);
         return this;
     }
 
     public MutableLaunchContext removeJvmArgs(String... value) {
-        List.of(value).forEach(this.jvmArgs::remove);
+        requireElements("jvmArgs", value);
+        removeAllOccurrences(jvmArgs, value);
         return this;
     }
 
     public MutableLaunchContext removeClasspath(Path... value) {
-        List.of(value).forEach(this.classpath::remove);
+        requireElements("classpath", value);
+        List.of(value).forEach(classpath::remove);
         return this;
     }
 
+    /**
+     * Removes every occurrence rather than the first, because {@code programArgs} keeps duplicates.
+     */
     public MutableLaunchContext removeProgramArgs(String... value) {
-        this.programArgs.removeAll(List.of(value));
+        requireElements("programArgs", value);
+        removeAllOccurrences(programArgs, value);
         return this;
     }
 
     public MutableLaunchContext removeEnvironment(String... value) {
-        List.of(value).forEach(this.environment::remove);
+        requireElements("environment", value);
+        List.of(value).forEach(environment::remove);
         return this;
     }
 
     public MutableLaunchContext removeSystemProperties(String... value) {
-        List.of(value).forEach(this.systemProperties::remove);
+        requireElements("systemProperties", value);
+        List.of(value).forEach(systemProperties::remove);
         return this;
+    }
+
+    /**
+     * Freezes the current state into an immutable context. Identity fields are validated here so a
+     * plugin that wiped one fails with a message naming it, rather than producing a child JVM that
+     * dies on a nonsensical command line.
+     *
+     * @throws IllegalStateException when a required field was set to null by a plugin
+     */
+    public LaunchContext build() {
+        requireField("javaHome", javaHome);
+        requireField("mainClass", mainClass);
+        requireField("workingDirectory", workingDirectory);
+
+        return LaunchContext.builder()
+                .javaHome(javaHome)
+                .jvmArgs(jvmArgs)
+                .classpath(classpath)
+                .javaAgents(javaAgents)
+                .moduleOptions(moduleOptions)
+                .programArgs(programArgs)
+                .mainClass(mainClass)
+                .workingDirectory(workingDirectory)
+                .environment(environment)
+                .systemProperties(systemProperties)
+                .gameVersion(gameVersion)
+                .resolution(resolution)
+                .fullScreen(fullScreen)
+                .soundEnabled(soundEnabled)
+                .launchDirect(launchDirect)
+                .jarLaunch(jarLaunch)
+                .build();
+    }
+
+    private static void requireField(String name, Object value) {
+        if (value == null) {
+            throw new IllegalStateException(
+                    "Launch context field '" + name + "' is required but was set to null by a plugin");
+        }
+    }
+
+    private static String requireKey(String name, String value) {
+        if (value == null || value.isEmpty()) {
+            throw new IllegalArgumentException(name + " must not be null or empty");
+        }
+        return value;
+    }
+
+    private static String requireNonNullString(String name, String value) {
+        return Objects.requireNonNull(value, name + " must not be null");
+    }
+
+    private static <T> void requireElements(String name, T[] values) {
+        Objects.requireNonNull(values, name + " must not be null");
+        for (int i = 0; i < values.length; i++) {
+            if (values[i] == null) {
+                throw new IllegalArgumentException(name + "[" + i + "] must not be null");
+            }
+        }
+    }
+
+    @SafeVarargs
+    private static <T> void removeAllOccurrences(List<T> target, T... values) {
+        for (T value : values) {
+            target.removeIf(value::equals);
+        }
+    }
+
+    private static <T> List<T> copyList(String name, Collection<T> values) {
+        Objects.requireNonNull(values, name + " must not be null");
+        List<T> copy = new ArrayList<>(values.size());
+        for (T value : values) {
+            if (value == null) {
+                Log.warn("[LaunchRedirector] Dropped null element from " + name);
+                continue;
+            }
+            copy.add(value);
+        }
+        return copy;
+    }
+
+    private static <T> Set<T> copySet(String name, Collection<T> values) {
+        Objects.requireNonNull(values, name + " must not be null");
+        Set<T> copy = new LinkedHashSet<>(values.size());
+        for (T value : values) {
+            if (value == null) {
+                Log.warn("[LaunchRedirector] Dropped null element from " + name);
+                continue;
+            }
+            copy.add(value);
+        }
+        return copy;
+    }
+
+    /**
+     * System properties keep null values, because they encode the bare {@code -Dkey} switch form. The
+     * environment does not: {@link ProcessBuilder#environment()} rejects null values, so {@link
+     * #copyMap} drops them there instead.
+     */
+    private static Map<String, String> copySystemProperties(Map<String, String> values) {
+        Objects.requireNonNull(values, "systemProperties must not be null");
+        Map<String, String> copy = new LinkedHashMap<>(values.size());
+        values.forEach((key, value) -> {
+            if (key == null || key.isEmpty()) {
+                Log.warn("[LaunchRedirector] Dropped system property with a null or empty key");
+                return;
+            }
+            copy.put(key, value);
+        });
+        return copy;
+    }
+
+    private static Map<String, String> copyMap(String name, Map<String, String> values) {
+        Objects.requireNonNull(values, name + " must not be null");
+        Map<String, String> copy = new LinkedHashMap<>(values.size());
+        values.forEach((key, value) -> {
+            if (key == null || value == null) {
+                Log.warn("[LaunchRedirector] Dropped null entry from " + name);
+                return;
+            }
+            copy.put(key, value);
+        });
+        return copy;
     }
 }

@@ -8,6 +8,8 @@ import lombok.experimental.UtilityClass;
 import java.io.File;
 import java.lang.management.ManagementFactory;
 import java.lang.management.RuntimeMXBean;
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.regex.Pattern;
@@ -25,25 +27,42 @@ public class LaunchContextHelper {
         List<String> inputArgs = runtime.getInputArguments();
         LaunchContext defaultContext = JvmArgumentParser.buildDefaultContextFromJVMArgs(inputArgs);
 
-        // ---------- CP ----------
         Set<Path> classpath = new LinkedHashSet<>();
         for (String entry : System.getProperty("java.class.path", "").split(Pattern.quote(File.pathSeparator))) {
             if (!entry.isBlank()) {
-                classpath.add(Path.of(entry).toAbsolutePath());
+                classpath.add(Path.of(entry).toAbsolutePath().normalize());
             }
         }
 
-        // ---------- Main ----------
         String mainClass = FALLBACK_MAIN;
+        List<String> programArgs = new ArrayList<>();
+        boolean jarLaunch = false;
         String javaCommand = System.getProperty("sun.java.command");
         if (javaCommand != null && !javaCommand.isBlank()) {
-            String first = javaCommand.trim().split("\\s+")[0];
-            if (!first.isBlank()) {
-                mainClass = first;
+            // "sun.java.command" holds the main class (or the jar path for a "-jar" start) followed by
+            // the program arguments, joined with single spaces and unquoted, so arguments containing
+            // whitespace are not recoverable. Forwarding the rest beats dropping them, which is what
+            // used to happen here; the game's own relauncher (Utils.restartGame) does the same.
+            String[] parts = javaCommand.trim().split("\\s+");
+            String head = parts[0];
+
+            if (head.endsWith(".jar")) {
+                Path jar = toPathOrNull(head);
+                if (jar != null && Files.isRegularFile(jar)) {
+                    // the jar path sits where the main class normally sits
+                    jarLaunch = true;
+                    mainClass = jar.toAbsolutePath().normalize().toString();
+                } else {
+                    mainClass = head;
+                }
+            } else {
+                mainClass = head;
             }
+
+            programArgs.addAll(Arrays.asList(parts).subList(1, parts.length));
         }
 
-        // ---------- GameVer ----------
+        // an unreadable game version must not stop the relaunch
         String version;
         try {
             version = LaunchRedirector.getGameVersion();
@@ -52,14 +71,14 @@ public class LaunchContextHelper {
             Log.warn("[LaunchRedirector] Failed to read game version: " + e);
         }
 
-        // ---------- Build ----------
         return defaultContext.toMutable()
                 .setJavaHome(Path.of(System.getProperty("java.home")))
                 .setClasspath(classpath)
                 .setMainClass(mainClass)
                 .setWorkingDirectory(Path.of(System.getProperty("user.dir", ".")).toAbsolutePath().normalize())
                 .setEnvironment(new HashMap<>(System.getenv()))
-                .setProgramArgs(new ArrayList<>())
+                .setProgramArgs(programArgs)
+                .setJarLaunch(jarLaunch)
                 .setGameVersion(version)
                 .setResolution(Resolution.of(w, h))
                 .setFullScreen(fs)
@@ -68,6 +87,13 @@ public class LaunchContextHelper {
                 .build();
     }
 
+    private static Path toPathOrNull(String candidate) {
+        try {
+            return Path.of(candidate);
+        } catch (InvalidPathException e) {
+            return null;
+        }
+    }
 
     public static LaunchContext buildFromCurrentJvm() {
         boolean fs = Boolean.parseBoolean(System.getProperty(FS_PROP, "false"));
@@ -78,6 +104,4 @@ public class LaunchContextHelper {
         String h = parts.length > 1 ? parts[1] : "1080";
         return buildFromCurrentJvm(fs, sound, w, h);
     }
-
-
 }

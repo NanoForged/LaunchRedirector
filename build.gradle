@@ -1,5 +1,6 @@
 plugins {
     id 'java'
+    id 'maven-publish'
     id 'com.gradleup.shadow' version '9.4.3'
 }
 
@@ -10,39 +11,50 @@ repositories {
     mavenCentral()
 }
 
-
 dependencies {
     annotationProcessor(compileOnly("org.projectlombok:lombok:1.18.42"))
     implementation "net.lenni0451.classtransform:core:1.15.1"
-    compileOnly fileTree(dir: 'lib', include: ['*.jar'])
     compileOnly("org.json:json:20140107")
     compileOnly("org.jetbrains:annotations:26.0.2")
-    //annotationProcessor compileOnly("com.google.auto.service:auto-service:1.1.1")
 }
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17
+    withSourcesJar()
 }
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+tasks.withType(Javadoc).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+def agentManifest = [
+        'Premain-Class'          : 'io.github.nanoforged.launchredirector.LaunchRedirector',
+        'Can-Redefine-Classes'   : 'true',
+        'Can-Retransform-Classes': 'true'
+]
 
 jar {
     manifest {
-        attributes(
-                'Premain-Class': 'io.github.nanoforged.launchredirector.LaunchRedirector',
-                'Can-Redefine-Classes': 'true',
-                'Can-Retransform-Classes': 'true'
-        )
+        attributes(agentManifest)
     }
 }
 
 shadowJar {
     manifest {
-        attributes(
-                'Premain-Class': 'io.github.nanoforged.launchredirector.LaunchRedirector',
-                'Can-Redefine-Classes': 'true',
-                'Can-Retransform-Classes': 'true'
-        )
+        attributes(agentManifest)
     }
 }
 
 
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+        }
+    }
+}
