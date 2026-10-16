@@ -74,8 +74,6 @@ public final class MutableLaunchContext {
         setJarLaunch(ctx.isJarLaunch());
     }
 
-    // collection getters expose unmodifiable copies, so elements are shared but containers are not.
-    // That sharing is safe only while every element type stays immutable; see LaunchContext.
 
     /** Unmodifiable snapshot of the JVM arguments, in order. */
     public List<String> getJvmArgs() {
@@ -149,39 +147,53 @@ public final class MutableLaunchContext {
         return this;
     }
 
-    public MutableLaunchContext withJvmArgs(Consumer<? super List<String>> operator) {
-        Objects.requireNonNull(operator, "operator").accept(jvmArgs);
-        return setJvmArgs(jvmArgs);
+    /**
+     * Hands the live, mutable JVM argument list to {@code operator} and returns this context for
+     * chaining. Unlike {@link #getJvmArgs()}, which is an unmodifiable snapshot, mutations here stick.
+     */
+    public MutableLaunchContext modifyJvmArgs(Consumer<? super List<String>> operator) {
+        return mutate(operator, jvmArgs);
     }
 
-    public MutableLaunchContext withClasspath(Consumer<? super Set<Path>> operator) {
-        Objects.requireNonNull(operator, "operator").accept(classpath);
-        return setClasspath(classpath);
+    /** Live classpath, mutable in place. See {@link #modifyJvmArgs}. */
+    public MutableLaunchContext modifyClasspath(Consumer<? super Set<Path>> operator) {
+        return mutate(operator, classpath);
     }
 
-    public MutableLaunchContext withJavaAgents(Consumer<? super Set<AgentSpec>> operator) {
-        Objects.requireNonNull(operator, "operator").accept(javaAgents);
-        return setJavaAgents(javaAgents);
+    /** Live java agent set, mutable in place. See {@link #modifyJvmArgs}. */
+    public MutableLaunchContext modifyJavaAgents(Consumer<? super Set<AgentSpec>> operator) {
+        return mutate(operator, javaAgents);
     }
 
-    public MutableLaunchContext withModuleOptions(Consumer<? super Set<ModuleSpec>> operator) {
-        Objects.requireNonNull(operator, "operator").accept(moduleOptions);
-        return setModuleOptions(moduleOptions);
+    /** Live module option set, mutable in place. See {@link #modifyJvmArgs}. */
+    public MutableLaunchContext modifyModuleOptions(Consumer<? super Set<ModuleSpec>> operator) {
+        return mutate(operator, moduleOptions);
     }
 
-    public MutableLaunchContext withProgramArgs(Consumer<? super List<String>> operator) {
-        Objects.requireNonNull(operator, "operator").accept(programArgs);
-        return setProgramArgs(programArgs);
+    /** Live program argument list, mutable in place. See {@link #modifyJvmArgs}. */
+    public MutableLaunchContext modifyProgramArgs(Consumer<? super List<String>> operator) {
+        return mutate(operator, programArgs);
     }
 
-    public MutableLaunchContext withEnvironment(Consumer<? super Map<String, String>> operator) {
-        Objects.requireNonNull(operator, "operator").accept(environment);
-        return setEnvironment(environment);
+    /** Live environment map, mutable in place. See {@link #modifyJvmArgs}. */
+    public MutableLaunchContext modifyEnvironment(Consumer<? super Map<String, String>> operator) {
+        return mutate(operator, environment);
     }
 
-    public MutableLaunchContext withSystemProperties(Consumer<? super Map<String, String>> operator) {
-        Objects.requireNonNull(operator, "operator").accept(systemProperties);
-        return setSystemProperties(systemProperties);
+    /** Live system property map, mutable in place. See {@link #modifyJvmArgs}. */
+    public MutableLaunchContext modifySystemProperties(Consumer<? super Map<String, String>> operator) {
+        return mutate(operator, systemProperties);
+    }
+
+    /**
+     * Applies {@code operator} to a live collection and returns this context for chaining. It
+     * deliberately does not go through the corresponding setter: the setters normalize by dropping
+     * nulls, which is right for values coming in from outside but would silently delete entries that
+     * are already part of this context.
+     */
+    private <T> MutableLaunchContext mutate(Consumer<? super T> operator, T target) {
+        Objects.requireNonNull(operator, "operator").accept(target);
+        return this;
     }
 
     public MutableLaunchContext addEnvironment(String key, String value) {

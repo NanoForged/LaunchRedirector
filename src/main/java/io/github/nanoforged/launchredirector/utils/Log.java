@@ -7,13 +7,10 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 /**
- * Minimal file logger for the pre-main agent. The log lives in the working directory the launcher
- * already owns, so no path discovery is needed, and a failed write goes to stderr because this is the
- * only trail a relaunch that never happened leaves.
- *
+ * Minimal file logger for the pre-main agent.
  * <p>Configured by system properties, which are read once when this class initializes:
  * <ul>
- *   <li>{@code -Dlaunch.redirector.log=ture} enable logging entirely, including the file itself.
+ *   <li>{@code -Dlaunch.redirector.log=ture} to enable logging entirely, including the file itself.
  *   </li>
  *   <li>{@code -Dlaunch.redirector.log.file=<path>} writes somewhere other than the working
  *   directory.</li>
