@@ -222,6 +222,7 @@ public final class MutableLaunchContext {
         return this;
     }
 
+    /** A directory adds its own classes and the jars directly inside it; see {@link LaunchContext#getClasspath()}. */
     public MutableLaunchContext addClasspath(Path... value) {
         requireElements("classpath", value);
         classpath.addAll(List.of(value));

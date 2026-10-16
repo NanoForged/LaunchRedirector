@@ -29,9 +29,17 @@ public class LaunchContextHelper {
 
         Set<Path> classpath = new LinkedHashSet<>();
         for (String entry : System.getProperty("java.class.path", "").split(Pattern.quote(File.pathSeparator))) {
-            if (!entry.isBlank()) {
-                classpath.add(Path.of(entry).toAbsolutePath().normalize());
+            if (entry.isBlank()) {
+                continue;
             }
+            Path path = toPathOrNull(entry);
+            if (path == null) {
+                // An unmatched "*" wildcard survives in java.class.path as a literal star, and a star is
+                // not a legal Path character. It matched no jar in this JVM, so dropping it loses nothing.
+                Log.debug("[LaunchRedirector] Skipping unrepresentable classpath entry: " + entry);
+                continue;
+            }
+            classpath.add(path.toAbsolutePath().normalize());
         }
 
         String mainClass = FALLBACK_MAIN;
@@ -90,7 +98,7 @@ public class LaunchContextHelper {
     private static Path toPathOrNull(String candidate) {
         try {
             return Path.of(candidate);
-        } catch (InvalidPathException e) {
+        } catch (Exception e) {
             return null;
         }
     }

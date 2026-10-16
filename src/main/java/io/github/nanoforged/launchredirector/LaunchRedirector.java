@@ -16,11 +16,16 @@ import net.lenni0451.classtransform.utils.tree.BasicClassProvider;
 import net.lenni0451.classtransform.utils.tree.IClassProvider;
 
 import java.io.File;
+import java.io.IOException;
 import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Field;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
@@ -158,6 +163,43 @@ public class LaunchRedirector {
         handleRelaunch(LaunchContextHelper.buildFromCurrentJvm(fs, sound, w, h));
     }
 
+    /**
+     * Expands one declared classpath entry into the tokens the child should receive.
+     *
+     * <p>A directory expands into two tokens, because neither form covers the other: the directory
+     * itself keeps working as a class root, so classes and resources below it resolve by package path,
+     * while {@code <dir>/*} adds the jars sitting directly in it. Handing over a directory and
+     * expecting its jars to come along is the natural thing for a caller to do, and a bare directory
+     * entry silently ignores them.
+     *
+     * <p>{@code <dir>/*} is emitted only when the directory actually holds a jar. The VM tolerates an
+     * unmatched wildcard, but the star survives into the child's {@code java.class.path}, and a star
+     * cannot be read back into a {@link Path}; keeping it out means every value this process writes is
+     * readable by {@link LaunchContextHelper#buildFromCurrentJvm()}.
+     *
+     * <p>Entries are made absolute here on purpose: the child resolves a relative {@code -cp} entry
+     * against its own working directory, which need not be the directory the entry was written in, and
+     * directory entries are the ones normally written relative to a project.
+     */
+    private static List<String> expandClasspathEntry(Path entry) {
+        Path absolute = entry.toAbsolutePath().normalize();
+        if (!Files.isDirectory(absolute) || !containsJar(absolute)) {
+            return List.of(absolute.toString());
+        }
+        return List.of(absolute.toString(), absolute + "/*");
+    }
+
+    /** True when the directory holds at least one jar directly inside it. */
+    private static boolean containsJar(Path directory) {
+        try (var entries = Files.list(directory)) {
+            return entries.anyMatch(path -> path.getFileName().toString()
+                    .toLowerCase(Locale.ROOT).endsWith(".jar"));
+        } catch (IOException e) {
+            Log.warn("[LaunchRedirector] Cannot list classpath directory " + directory + ": " + e);
+            return false;
+        }
+    }
+
     public static List<String> buildCommandLine(LaunchContext ctx) {
         List<String> cmd = new ArrayList<>();
         Log.info("[LaunchRedirector] Building command line");
@@ -200,9 +242,11 @@ public class LaunchRedirector {
         } else {
             if (!ctx.getClasspath().isEmpty()) {
                 cmd.add("-cp");
-                cmd.add(ctx.getClasspath().stream()
-                        .map(Path::toString)
-                        .collect(Collectors.joining(File.pathSeparator)));
+                // one declared directory becomes two tokens, and two declarations can normalize onto
+                // the same directory, so the expanded result is de-duplicated keeping the given order
+                Set<String> entries = new LinkedHashSet<>();
+                ctx.getClasspath().forEach(entry -> entries.addAll(expandClasspathEntry(entry)));
+                cmd.add(String.join(File.pathSeparator, entries));
             }
 
             cmd.add(ctx.getMainClass());

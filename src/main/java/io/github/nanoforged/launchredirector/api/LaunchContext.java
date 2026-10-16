@@ -26,6 +26,10 @@ public final class LaunchContext {
     @Singular("jvmArg")
     private final List<String> jvmArgs;
 
+    /**
+     * A directory entry expands to the directory plus {@code <dir>/*}, so the classes below it and the
+     * jars directly inside it both reach the child. Not recursive; no {@code /*} when it holds no jar.
+     */
     @Singular("classpathEntry")
     private final Set<Path> classpath;
 

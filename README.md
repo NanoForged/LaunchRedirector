@@ -74,6 +74,7 @@ public interface ILaunchConfigPlugin {
 - setter做null校验：集合参数为null抛`NullPointerException`，元素为null则丢弃并记日志。
 - `build()`校验`javaHome`、`mainClass`、`workingDirectory`，缺失时抛指名道姓的`IllegalStateException`。
 - `jvmArgs`与`programArgs`是有序`List`，重复项合法且位置有意义，**不会**去重；类路径有序但去重，因此是`Set`。
+- 类路径条目传**目录**时展开为「目录 + `目录/*`」：目录当类根用，`/*`额外收进其中**直接**含有的jar。不递归，目录内无jar则不发`/*`。
 
 > 破坏性变更：`getJvmArgs()`从`Set<String>`变成`List<String>`，集合型getter返回不可变快照。依赖`ctx.getJvmArgs().add(...)`或`instanceof Set`的插件需改用`addJvmArgs(...)`。
 
